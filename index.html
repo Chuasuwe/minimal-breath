@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Supremedism Demo V0.1</title>
+  <meta name="theme-color" content="#0a0a0a" />
+  <style>
+    :root{
+      --ease: cubic-bezier(.4,0,.2,1);
+      --bg: rgb(255,255,255);
+      --fg: rgb(38,38,38);
+      --Apx:320px;
+      --Bpx:40px;
+      --Spx:160px;
+      --shapeDur:0.4s;
+      --box-bg: #7A2C2C;
+      --box-fg: #EAB233;
+      --equal-bg: #154A74;
+      --equal-fg: #F7D34B;
+    }
+    *{ box-sizing:border-box; }
+    html, body{ height:100%; overflow:hidden; }
+    body{ margin:0; background:var(--bg); color:var(--fg); font-family:-apple-system,BlinkMacSystemFont,Helvetica,Roboto,PingFangSC,sans-serif; display:flex; align-items:center; justify-content:center; transition: background 400ms var(--ease); }
+    .panel{ display:none; width:100%; height:100%; }
+    .panel.active{ display:block; }
+    .center{ height:100%; display:flex; align-items:center; justify-content:center; }
+    #home{ touch-action:none; }
+    .bar{ background:var(--fg); width:var(--Spx); height:var(--Spx); transform-origin:center; transform: rotate(var(--deg,0deg)) scale(var(--sx,1), var(--sy,1)) scale(var(--homeScale,1)) scale(var(--scaleF,1)); transition: transform var(--shapeDur,0.4s) var(--ease), background 0.4s var(--ease); }
+    #breathe{ touch-action:none; }
+    .breath-wrap{ display:grid; place-items:center; width:100%; height:100%; }
+    .breath-rect{ width:var(--Bpx,40px); height:var(--Apx,320px); background:var(--fg); transform-origin:center; transform: rotate(var(--rot,0deg)) scale(var(--scale,1)); transition: height var(--dur,4s) var(--ease), transform var(--dur,4s) var(--ease), background 400ms var(--ease); }
+    .breath-rect.horizontal{ --rot: -90deg; }
+  </style>
+</head>
+<body>
+  <section id="home" class="panel active">
+    <div class="center" id="homeHit">
+      <div id="modeBar" class="bar"></div>
+    </div>
+  </section>
+  <section id="breathe" class="panel">
+    <div class="breath-wrap"><div id="breathRect" class="breath-rect"></div></div>
+  </section>
+  <script type="module">
+    const $ = s => document.querySelector(s);
+    const panels = { home:$('#home'), breathe:$('#breathe') };
+    const ui = { bar:$('#modeBar'), rect:$('#breathRect') };
+    const THEME_VERTICAL = { bg:[255,255,255], fg:[38,38,38] };
+    const THEME_HORIZONTAL = { bg:[38,38,38], fg:[255,255,255] };
+    const clamp01 = v => Math.max(0, Math.min(1, v));
+    const lerp = (a,b,t) => a + (b-a) * t;
+    const lerpRGB = (c1,c2,t) => [ Math.round(lerp(c1[0],c2[0],t)), Math.round(lerp(c1[1],c2[1],t)), Math.round(lerp(c1[2],c2[2],t)) ];
+    function setTheme(bgRGB, fgRGB){ const r=document.documentElement.style; r.setProperty('--bg',`rgb(${bgRGB[0]},${bgRGB[1]},${bgRGB[2]})`); r.setProperty('--fg',`rgb(${fgRGB[0]},${fgRGB[1]},${fgRGB[2]})`); }
+    function norm180(a){ return ((a % 180) + 180) % 180; }
+    function horizFactor(angle){ const m=norm180(angle); return clamp01(1 - Math.abs(90 - m)/90); }
+    function updateThemeByAngle(angle){ const t=horizFactor(angle); const bg=lerpRGB(THEME_VERTICAL.bg,THEME_HORIZONTAL.bg,t); const fg=lerpRGB(THEME_VERTICAL.fg,THEME_HORIZONTAL.fg,t); setTheme(bg,fg); }
+    let A=320,B=40,S=160;
+    function computeSizes(){ const vw=window.innerWidth,vh=window.innerHeight,dim=Math.min(vw,vh); B=Math.min(dim*0.09,48); A=Math.min(Math.max(B*3.5,vh*0.48),420); S=Math.min(dim*0.28,220); const r=document.documentElement.style; r.setProperty('--Apx',A+'px'); r.setProperty('--Bpx',B+'px'); r.setProperty('--Spx',S+'px'); r.setProperty('--sx',String(B/S)); r.setProperty('--sy',String(A/S)); }
+    computeSizes(); window.addEventListener('resize',computeSizes);
+    let shape='bar', currentDeg=0,startX=0,startY=0,baseDeg=0,baseSnap=0,dragging=false,lastMoveX=null,lastMoveY=null;
+    const PX_PER_DEG=2,SWITCH_THRESHOLD=15,SWIPE_UP_THRESHOLD=100,SWIPE_DOWN_THRESHOLD=80; let gestureMode=null; const LOCK_PX=12; const TAP_TOL=8; let moved=false;
+    function applyDeg(deg){ currentDeg=deg; ui.bar.style.setProperty('--deg',deg+'deg'); updateThemeByAngle(deg); }
+    function nearestSnap(angle){ return Math.round(angle/90)*90; }
+    function isHorizontal(angle){ const m=norm180(angle); return m>=45&&m<135; }
+    function setShape(type){ if(type==='square'){ document.documentElement.style.setProperty('--sx','1'); document.documentElement.style.setProperty('--sy','1'); document.documentElement.style.setProperty('--homeScale','1.2'); } else { document.documentElement.style.setProperty('--sx',String(B/S)); document.documentElement.style.setProperty('--sy',String(A/S)); document.documentElement.style.setProperty('--homeScale','1'); } ui.bar.style.setProperty('--scaleF','0.98'); requestAnimationFrame(()=> ui.bar.style.setProperty('--scaleF','1')); }
+    function switchShape(s){ if(shape===s) return; shape=s; setShape(s); moved=true; }
+    function homeStart(x,y){ dragging=true; startX=x; startY=y; baseDeg=currentDeg; baseSnap=nearestSnap(baseDeg); lastMoveX=x; lastMoveY=y; gestureMode=null; moved=false; }
+    function homeMove(x,y){ if(!dragging) return; lastMoveX=x; lastMoveY=y; const dx=x-startX; const dy=(typeof y==='number')?(y-startY):0; if(Math.max(Math.abs(dx),Math.abs(dy))>TAP_TOL) moved=true; if(gestureMode===null){ if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>=LOCK_PX) gestureMode='x'; else if(Math.abs(dy)>Math.abs(dx)&&Math.abs(dy)>=LOCK_PX) gestureMode='y'; } if(gestureMode==='x'){ const delta=dx/PX_PER_DEG; applyDeg(baseDeg+delta); } else if(gestureMode==='y'&&typeof y==='number'){ if(dy<-SWIPE_UP_THRESHOLD&&shape==='bar'){ switchShape('square'); } else if(dy>SWIPE_DOWN_THRESHOLD&&shape==='square'){ switchShape('bar'); } } }
+    function homeEnd(){ if(!dragging) return; dragging=false; if(gestureMode==='x'){ const angle=lastMoveX==null?currentDeg:baseDeg+(lastMoveX-startX)/PX_PER_DEG; const delta=angle-baseSnap; if(Math.abs(delta)>=SWITCH_THRESHOLD) applyDeg(baseSnap+(delta>0?90:-90)); else applyDeg(baseSnap); } gestureMode=null; }
+    panels.home.addEventListener('touchstart',e=>homeStart(e.touches[0].clientX,e.touches[0].clientY),{passive:true}); panels.home.addEventListener('touchmove',e=>homeMove(e.touches[0].clientX,e.touches[0].clientY),{passive:true}); panels.home.addEventListener('touchend',()=>homeEnd(),{passive:true}); let md=false; panels.home.addEventListener('mousedown',e=>{md=true;homeStart(e.clientX,e.clientY)}); window.addEventListener('mousemove',e=>{if(md)homeMove(e.clientX,e.clientY)}); window.addEventListener('mouseup',()=>{if(md){md=false;homeEnd();}});
+    panels.home.addEventListener('click',()=>{ if(moved){ moved=false; return; } let m; m=(shape==='bar')?(isHorizontal(currentDeg)?'once':'gradual'):(isHorizontal(currentDeg)?'equal':'box'); startBreath(m); });
+    function show(name){ Object.values(panels).forEach(p=>p.classList.remove('active')); panels[name].classList.add('active'); }
+    const DUR={inhale:4,hold:7,exhale:8}; let stopRequested=false,mode='once',running=false; let audioCtx=null;
+    function ensureAudio(){ if(!audioCtx){ audioCtx=new(window.AudioContext||window.webkitAudioContext)(); } if(audioCtx.state==='suspended') audioCtx.resume(); }
+    function playWood(){ ensureAudio(); const now=audioCtx.currentTime; const m=audioCtx.createGain(); m.gain.value=0.9; m.connect(audioCtx.destination); const o=audioCtx.createOscillator(); o.type='sine'; o.frequency.setValueAtTime(500,now); const g=audioCtx.createGain(); g.gain.setValueAtTime(1,now); g.gain.exponentialRampToValueAtTime(0.001,now+0.18); o.connect(g).connect(m); o.start(now); o.stop(now+0.2); }
+    function playBowl(){ ensureAudio(); const now=audioCtx.currentTime; const m=audioCtx.createGain(); m.gain.value=0.25; m.connect(audioCtx.destination); const o1=audioCtx.createOscillator(); const o2=audioCtx.createOscillator(); o1.type='sine'; o2.type='sine'; o1.frequency.setValueAtTime(311.13,now); o2.frequency.setValueAtTime(622.25,now); const g=audioCtx.createGain(); g.gain.setValueAtTime(0.001,now); g.gain.exponentialRampToValueAtTime(0.6,now+0.05); g.gain.exponentialRampToValueAtTime(0.001,now+2.4); o1.connect(g); o2.connect(g); g.connect(m); o1.start(now); o2.start(now); o1.stop(now+2.5); o2.stop(now+2.5); }
+    function playDing(){ ensureAudio(); const now=audioCtx.currentTime; const o=audioCtx.createOscillator(); const g=audioCtx.createGain(); o.type='sine'; o.frequency.setValueAtTime(880,now); g.gain.setValueAtTime(0.001,now); g.gain.exponentialRampToValueAtTime(0.3,now+0.02); g.gain.exponentialRampToValueAtTime(0.001,now+1.2); o.connect(g).connect(audioCtx.destination); o.start(now); o.stop(now+1.2); }
+    async function startBreath(m){ if(running)return; mode=m; stopRequested=false; running=true; show('breathe'); ensureAudio(); if(mode==='once'){ ui.rect.classList.add('horizontal'); ui.rect.style.width=B+'px'; ui.rect.style.height=A+'px'; ui.rect.style.setProperty('--scale','1'); ui.rect.style.setProperty('--rot','-90deg'); } else if(mode==='gradual'){ ui.rect.classList.remove('horizontal'); ui.rect.style.width=B+'px'; ui.rect.style.height=A+'px'; ui.rect.style.setProperty('--scale','1'); ui.rect.style.setProperty('--rot','0deg'); } else if(mode==='box'){ ui.rect.classList.remove('horizontal'); ui.rect.style.width=S+'px'; ui.rect.style.height=S+'px'; ui.rect.style.setProperty('--scale','1.2'); document.body.style.background='var(--box-bg)'; ui.rect.style.background='var(--box-fg)'; } else if(mode==='equal'){ ui.rect.classList.remove('horizontal'); ui.rect.style.width=S+'px'; ui.rect.style.height=S+'px'; ui.rect.style.setProperty('--scale','1.2'); document.body.style.background='var(--equal-bg)'; ui.rect.style.background='var(--equal-fg)'; } await new Promise(r=>requestAnimationFrame(r)); if(mode==='once'){ for(let i=0;i<4&&!stopRequested;i++){ await inhale(DUR.inhale); if(stopRequested)break; await hold(DUR.hold); if(stopRequested)break; await exhale(DUR.exhale); if(stopRequested)break; } } else if(mode==='gradual'){ for(let i=0;i<10&&!stopRequested;i++){ await inhale(4); if(stopRequested)break; await exhale(6); } } else if(mode==='box'){ for(let i=0;i<6&&!stopRequested;i++){ await inhaleSq(4); if(stopRequested)break; await hold(4); if(stopRequested)break; await exhaleSq(4); if(stopRequested)break; await hold(4); } } else if(mode==='equal'){ for(let i=0;i<8&&!stopRequested;i++){ await inhaleSq(5); if(stopRequested)break; await exhaleSq(5); } } if(!stopRequested){ playDing(); await exit(); } running=false; }
+    async function inhale(d=4){ playWood(); ui.rect.style.setProperty('--dur',d+'s'); ui.rect.style.height=B+'px'; await wait(d); }
+    async function hold(d=7){ playWood(); await wait(d); }
+    async function exhale(d=8){ playBowl(); ui.rect.style.setProperty('--dur',d+'s'); ui.rect.style.height=A+'px'; await wait(d); }
+    async function inhaleSq(d){ playWood(); ui.rect.style.setProperty('--dur',d+'s'); ui.rect.style.setProperty('--scale',String(B/S)); await wait(d); }
+    async function exhaleSq(d){ playBowl(); ui.rect.style.setProperty('--dur',d+'s'); ui.rect.style.setProperty('--scale','1.2'); await wait(d); }
+    function wait(s){ return new Promise(r=>setTimeout(r,s*1000)); }
+    panels.breathe.addEventListener('click',async()=>{ if(stopRequested)return; stopRequested=true; await exit(); running=false; });
+    async function exit(){ const wasSquare=(mode==='box'||mode==='equal'); ui.rect.style.transition='transform 0.4s var(--ease), height 0.4s var(--ease), background 0.4s var(--ease)'; if(wasSquare){ ui.rect.style.width=S+'px'; ui.rect.style.height=S+'px'; ui.rect.style.setProperty('--scale','1.2'); ui.rect.style.setProperty('--rot','0deg'); document.body.style.background='var(--bg)'; ui.rect.style.background='var(--fg)'; } else { ui.rect.style.width=B+'px'; ui.rect.style.height=A+'px'; ui.rect.style.setProperty('--scale','1'); ui.rect.style.setProperty('--rot',isHorizontal(currentDeg)?'-90deg':'0deg'); } await wait(0.4); ui.rect.style.transition='height var(--dur,4s) var(--ease), transform var(--dur,4s) var(--ease), background 400ms var(--ease)'; show('home'); }
+    window.addEventListener('touchstart',()=>ensureAudio(),{once:true,passive:true});
+  </script>
+</body>
+</html>
